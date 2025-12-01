@@ -1,0 +1,33 @@
+# 虚拟环境
+venv/
+
+# 日志文件
+logs/
+*.log
+
+# 图片资源
+imgs/
+
+# 输出文件
+output/
+
+# 配置文件
+config/config.yaml
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 编译文件
+*.pyc
+__pycache__/
+
+# 临时文件
+*.tmp
+*.temp
