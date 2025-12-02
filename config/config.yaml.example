@@ -1,0 +1,10 @@
+# PaddleOCR-vl API配置
+api_key: your_api_key_here
+api_url: https://paddleocr-vl-api.example.com
+
+# 识别选项
+use_doc_orientation_classify: true  # 是否使用文档方向分类
+use_doc_unwarping: true              # 是否使用文档矫正
+use_chart_recognition: true          # 是否使用图表识别
+prettifyMarkdown: true               # 是否美化Markdown输出
+visualize: true                      # 是否可视化识别结果
