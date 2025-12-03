@@ -8,9 +8,7 @@ Word文件样式处理模块
 import logging
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
-from docx.shared import RGBColor
 from lxml import etree
-import copy
 
 # 配置日志记录
 logger = logging.getLogger('PaddleOCRVL')
