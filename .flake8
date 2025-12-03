@@ -1,0 +1,12 @@
+[flake8]
+# 设置最大行长度为120个字符
+max-line-length = 120
+
+# 忽略特定规则
+ignore = E203, W503
+
+# 排除目录
+exclude = venv, __pycache__, .git, imgs, logs, output, template, test
+
+# 包含的文件类型
+include = *.py
