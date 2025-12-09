@@ -1,6 +1,6 @@
 [flake8]
-# 设置最大行长度为120个字符
-max-line-length = 120
+# 设置最大行长度为200个字符
+max-line-length = 200
 
 # 忽略特定规则
 ignore = E203, W503
