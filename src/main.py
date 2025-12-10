@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
-from PyQt5.QtCore import Qt, QRect, QPoint, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QRect, QPoint, QThread, pyqtSignal, QUrl
 
 from .ocr_api import PaddleOCRVL
 from .screenshot import Screenshot
@@ -504,7 +504,10 @@ class PaddleOCRVLAssistant(QMainWindow):
 
         # 将Markdown转换为HTML并显示
         html_content = self.markdown_to_html(processed_markdown)
-        self.result_view.setHtml(html_content)
+        # 添加基准URL，使相对路径能正确解析
+        import os
+        base_url = QUrl.fromLocalFile(os.getcwd() + '/')
+        self.result_view.setHtml(html_content, base_url)
 
         # 启用按钮
         self.screenshot_btn.setEnabled(True)
