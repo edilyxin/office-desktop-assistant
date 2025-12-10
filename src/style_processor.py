@@ -14,6 +14,110 @@ import tempfile
 # 配置日志记录
 logger = logging.getLogger('PaddleOCRVL')
 
+class Style:
+    """
+    样式类，封装样式数据
+    借鉴OpenXML样式定义设计
+    """
+    
+    def __init__(self, style_id, style_name, style_type='paragraph'):
+        """
+        初始化样式对象
+        
+        Args:
+            style_id (str): 样式ID
+            style_name (str): 样式名称
+            style_type (str): 样式类型 (paragraph, character, table, list, page)
+        """
+        self.style_id = style_id
+        self.style_name = style_name
+        self.style_type = style_type
+        
+        # 基本属性
+        self.font = {
+            'name': None,
+            'size': None,
+            'bold': False,
+            'italic': False,
+            'underline': False,
+            'color': None,
+            'highlight': None,
+            'superscript': False,
+            'subscript': False,
+            'strike': False,
+            'double_strike': False,
+            'all_caps': False,
+            'small_caps': False,
+            'shadow': False,
+            'outline': False,
+            'emboss': False,
+            'engrave': False
+        }
+        
+        # 段落属性
+        self.paragraph = {
+            'alignment': None,
+            'line_spacing': 1.0,
+            'space_before': 0,
+            'space_after': 0,
+            'indent_left': 0,
+            'indent_right': 0,
+            'first_line_indent': 0,
+            'keep_together': False,
+            'keep_with_next': False,
+            'page_break_before': False,
+            'widow_control': True
+        }
+        
+        # 表格属性
+        self.table = {
+            'border_top': None,
+            'border_bottom': None,
+            'border_left': None,
+            'border_right': None,
+            'cell_margins': None,
+            'shading': None
+        }
+        
+        # 列表属性
+        self.list = {
+            'format': None,
+            'level': 0,
+            'start': 1,
+            'indent': 0,
+            'followed_by': None
+        }
+        
+        # 页面属性
+        self.page = {
+            'size': None,
+            'margins': None,
+            'orientation': None,
+            'header_distance': None,
+            'footer_distance': None
+        }
+    
+    def __str__(self):
+        """字符串表示"""
+        return f"Style(id='{self.style_id}', name='{self.style_name}', type='{self.style_type}')"
+    
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            'id': self.style_id,
+            'name': self.style_name,
+            'type': self.style_type,
+            'font': self.font,
+            'paragraph': self.paragraph,
+            'table': self.table,
+            'list': self.list,
+            'page': self.page
+        }
+    
+    def to_json(self):
+        """转换为JSON字符串"""
+        import json
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
 
 class StyleProcessor:
     """
@@ -395,6 +499,379 @@ class StyleProcessor:
         except Exception as e:
             logger.error(f"更新文档内容样式引用失败: {str(e)}", exc_info=True)
             return False
+    
+    def get_template_styles(self):
+        """
+        获取模板文件的所有样式
+        
+        Returns:
+            list: Style对象列表
+        """
+        logger.info(f"开始获取模板文件样式: {self.template_path}")
+        
+        try:
+            # 提取模板样式XML
+            template_styles_xml_root, template_style_id_mapping = self.extract_template_styles()
+            if template_styles_xml_root is None:
+                return []
+            
+            styles = []
+            
+            # 处理每个样式元素
+            for style_elem in template_styles_xml_root.xpath('//w:style', namespaces=self.NS):
+                style_id = style_elem.get(f'{{{self.NS["w"]}}}styleId')
+                style_name_elem = style_elem.find('.//w:name', namespaces=self.NS)
+                
+                if style_name_elem is not None:
+                    style_name = style_name_elem.get(f'{{{self.NS["w"]}}}val')
+                    
+                    # 确定样式类型
+                    style_type = style_elem.get(f'{{{self.NS["w"]}}}type', 'paragraph')
+                    if style_type == 'paragraph':
+                        style_type = 'paragraph'
+                    elif style_type == 'character':
+                        style_type = 'character'
+                    elif style_type == 'table':
+                        style_type = 'table'
+                    else:
+                        style_type = 'paragraph'  # 默认
+                    
+                    # 创建Style对象
+                    style = Style(style_id, style_name, style_type)
+                    
+                    # 解析样式属性
+                    self._parse_style_attributes(style, style_elem)
+                    
+                    styles.append(style)
+            
+            logger.info(f"成功获取模板文件样式，共 {len(styles)} 个")
+            return styles
+            
+        except Exception as e:
+            logger.error(f"获取模板文件样式失败: {str(e)}", exc_info=True)
+            return []
+    
+    def get_target_styles(self):
+        """
+        获取目标文件的所有样式
+        
+        Returns:
+            list: Style对象列表
+        """
+        logger.info(f"开始获取目标文件样式: {self.target_path}")
+        
+        try:
+            # 分析目标文档
+            target_styles_xml_root, used_style_ids = self.analyze_target_document()
+            if target_styles_xml_root is None:
+                return []
+            
+            styles = []
+            
+            # 处理每个样式元素
+            for style_elem in target_styles_xml_root.xpath('//w:style', namespaces=self.NS):
+                style_id = style_elem.get(f'{{{self.NS["w"]}}}styleId')
+                style_name_elem = style_elem.find('.//w:name', namespaces=self.NS)
+                
+                if style_name_elem is not None:
+                    style_name = style_name_elem.get(f'{{{self.NS["w"]}}}val')
+                    
+                    # 确定样式类型
+                    style_type = style_elem.get(f'{{{self.NS["w"]}}}type', 'paragraph')
+                    if style_type == 'paragraph':
+                        style_type = 'paragraph'
+                    elif style_type == 'character':
+                        style_type = 'character'
+                    elif style_type == 'table':
+                        style_type = 'table'
+                    else:
+                        style_type = 'paragraph'  # 默认
+                    
+                    # 创建Style对象
+                    style = Style(style_id, style_name, style_type)
+                    
+                    # 解析样式属性
+                    self._parse_style_attributes(style, style_elem)
+                    
+                    styles.append(style)
+            
+            logger.info(f"成功获取目标文件样式，共 {len(styles)} 个")
+            return styles
+            
+        except Exception as e:
+            logger.error(f"获取目标文件样式失败: {str(e)}", exc_info=True)
+            return []
+    
+    def get_styles_by_string(self, search_string):
+        """
+        根据字符串查询所在段落、标题、表格或列表的当前样式
+        
+        Args:
+            search_string (str): 要查询的字符串
+            
+        Returns:
+            list: 包含Style对象和位置信息的字典列表
+        """
+        logger.info(f"开始根据字符串查询样式: '{search_string}'")
+        
+        try:
+            # 打开目标文件
+            with ZipFile(self.target_path, 'r') as target_zip:
+                # 读取document.xml
+                document_xml_content = target_zip.read('word/document.xml')
+                document_xml_root = etree.fromstring(document_xml_content)
+                
+                results = []
+                
+                # 1. 搜索段落
+                logger.debug("搜索段落...")
+                paragraphs = document_xml_root.xpath('//w:body//w:p', namespaces=self.NS)
+                
+                for para_idx, paragraph in enumerate(paragraphs):
+                    # 获取段落完整文本
+                    para_text = ""
+                    for text_elem in paragraph.xpath('.//w:t', namespaces=self.NS):
+                        if text_elem.text:
+                            para_text += text_elem.text
+                            logger.debug(f"段落 {para_idx} 文本: {para_text}")
+                    
+                    if search_string in para_text:
+                        # 获取段落样式
+                        pstyle_elem = paragraph.find('.//w:pStyle', namespaces=self.NS)
+                        if pstyle_elem is not None:
+                            style_id = pstyle_elem.get(f'{{{self.NS["w"]}}}val')
+                            
+                            # 获取样式名称
+                            target_styles_xml_content = target_zip.read('word/styles.xml')
+                            target_styles_xml_root = etree.fromstring(target_styles_xml_content)
+                            style_elem = target_styles_xml_root.xpath(f'//w:style[@w:styleId="{style_id}"]', namespaces=self.NS)
+                            
+                            if style_elem:
+                                style_name_elem = style_elem[0].find('.//w:name', namespaces=self.NS)
+                                style_name = style_name_elem.get(f'{{{self.NS["w"]}}}val') if style_name_elem is not None else style_id
+                                
+                                # 创建Style对象
+                                style = Style(style_id, style_name, 'paragraph')
+                                self._parse_style_attributes(style, style_elem[0])
+                            else:
+                                # 没有找到对应的样式元素，创建一个默认样式
+                                style = Style(style_id, f"未命名样式_{style_id}", 'paragraph')
+                        else:
+                            # 没有样式，创建一个默认样式
+                            style = Style('default', '默认样式', 'paragraph')
+                        
+                        # 添加到结果中
+                        results.append({
+                            'type': 'paragraph',
+                            'index': para_idx,
+                            'text': para_text,
+                            'style': style
+                        })
+                
+                # 2. 搜索表格
+                logger.debug("搜索表格...")
+                tables = document_xml_root.xpath('//w:body//w:tbl', namespaces=self.NS)
+                
+                for table_idx, table in enumerate(tables):
+                    # 检查表格是否包含搜索字符串
+                    table_text = ""
+                    for text_elem in table.xpath('.//w:t', namespaces=self.NS):
+                        if text_elem.text:
+                            table_text += text_elem.text
+                    
+                    if search_string in table_text:
+                        # 获取表格样式
+                        tblstyle_elem = table.find('.//w:tblStyle', namespaces=self.NS)
+                        if tblstyle_elem is not None:
+                            style_id = tblstyle_elem.get(f'{{{self.NS["w"]}}}val')
+                            
+                            # 获取样式名称
+                            target_styles_xml_content = target_zip.read('word/styles.xml')
+                            target_styles_xml_root = etree.fromstring(target_styles_xml_content)
+                            style_elem = target_styles_xml_root.xpath(f'//w:style[@w:styleId="{style_id}"]', namespaces=self.NS)
+                            
+                            if style_elem:
+                                style_name_elem = style_elem[0].find('.//w:name', namespaces=self.NS)
+                                style_name = style_name_elem.get(f'{{{self.NS["w"]}}}val') if style_name_elem is not None else style_id
+                                
+                                # 创建Style对象
+                                style = Style(style_id, style_name, 'table')
+                                self._parse_style_attributes(style, style_elem[0])
+                            else:
+                                # 没有找到对应的样式元素，创建一个默认样式
+                                style = Style(style_id, f"未命名表格样式_{style_id}", 'table')
+                        else:
+                            # 没有样式，创建一个默认样式
+                            style = Style('default_table', '默认表格样式', 'table')
+                        
+                        results.append({
+                            'type': 'table',
+                            'index': table_idx,
+                            'text': table_text,
+                            'style': style
+                        })
+                
+                # 3. 检查列表项
+                logger.debug("检查列表项...")
+                for para_idx, paragraph in enumerate(paragraphs):
+                    # 检查是否为列表项
+                    num_pr = paragraph.find('.//w:pPr//w:numPr', namespaces=self.NS)
+                    if num_pr is not None:
+                        # 获取段落文本
+                        text = ""
+                        for text_elem in paragraph.xpath('.//w:t', namespaces=self.NS):
+                            if text_elem.text:
+                                text += text_elem.text
+                        
+                        if search_string in text:
+                            # 获取段落样式
+                            pstyle_elem = paragraph.find('.//w:pStyle', namespaces=self.NS)
+                            if pstyle_elem is not None:
+                                style_id = pstyle_elem.get(f'{{{self.NS["w"]}}}val')
+                                
+                                # 获取样式名称和详细属性
+                                target_styles_xml_content = target_zip.read('word/styles.xml')
+                                target_styles_xml_root = etree.fromstring(target_styles_xml_content)
+                                style_elem = target_styles_xml_root.xpath(f'//w:style[@w:styleId="{style_id}"]', namespaces=self.NS)
+                                
+                                if style_elem:
+                                    style_name_elem = style_elem[0].find('.//w:name', namespaces=self.NS)
+                                    style_name = style_name_elem.get(f'{{{self.NS["w"]}}}val') if style_name_elem is not None else style_id
+                                    
+                                    # 创建Style对象并解析属性
+                                    style = Style(style_id, style_name, 'list')
+                                    self._parse_style_attributes(style, style_elem[0])
+                                else:
+                                    # 没有找到对应的样式元素，创建一个默认样式
+                                    style = Style(style_id, f"未命名列表样式_{style_id}", 'list')
+                            else:
+                                # 没有样式，创建一个默认样式
+                                style = Style('default_list', '默认列表样式', 'list')
+                            
+                            results.append({
+                                'type': 'list',
+                                'index': para_idx,
+                                'text': text,
+                                'style': style
+                            })
+                
+                logger.info(f"成功找到 {len(results)} 个包含字符串的元素")
+                return results
+                
+        except Exception as e:
+            logger.error(f"根据字符串查询样式失败: {str(e)}", exc_info=True)
+            return []
+    
+    def _parse_style_attributes(self, style, style_elem):
+        """
+        解析样式元素的属性并填充到Style对象
+        
+        Args:
+            style (Style): Style对象
+            style_elem (Element): 样式XML元素
+        """
+        # 解析字体属性
+        font_elem = style_elem.find('.//w:rPr', namespaces=self.NS)
+        if font_elem is not None:
+            # 字体名称
+            font_name = font_elem.find('.//w:rFonts', namespaces=self.NS)
+            if font_name is not None:
+                style.font['name'] = font_name.get(f'{{{self.NS["w"]}}}ascii')
+            
+            # 字体大小
+            font_size = font_elem.find('.//w:sz', namespaces=self.NS)
+            if font_size is not None:
+                style.font['size'] = font_size.get(f'{{{self.NS["w"]}}}val')
+            
+            # 粗体
+            bold = font_elem.find('.//w:b', namespaces=self.NS)
+            style.font['bold'] = bold is not None
+            
+            # 斜体
+            italic = font_elem.find('.//w:i', namespaces=self.NS)
+            style.font['italic'] = italic is not None
+            
+            # 下划线
+            underline = font_elem.find('.//w:u', namespaces=self.NS)
+            style.font['underline'] = underline is not None
+            
+            # 颜色
+            color = font_elem.find('.//w:color', namespaces=self.NS)
+            if color is not None:
+                style.font['color'] = color.get(f'{{{self.NS["w"]}}}val')
+        
+        # 解析段落属性
+        para_elem = style_elem.find('.//w:pPr', namespaces=self.NS)
+        if para_elem is not None:
+            # 对齐方式
+            alignment = para_elem.find('.//w:jc', namespaces=self.NS)
+            if alignment is not None:
+                style.paragraph['alignment'] = alignment.get(f'{{{self.NS["w"]}}}val')
+            
+            # 行间距
+            line_spacing = para_elem.find('.//w:spacing', namespaces=self.NS)
+            if line_spacing is not None:
+                style.paragraph['line_spacing'] = line_spacing.get(f'{{{self.NS["w"]}}}line')
+                style.paragraph['space_before'] = line_spacing.get(f'{{{self.NS["w"]}}}before')
+                style.paragraph['space_after'] = line_spacing.get(f'{{{self.NS["w"]}}}after')
+            
+            # 缩进
+            indent = para_elem.find('.//w:ind', namespaces=self.NS)
+            if indent is not None:
+                style.paragraph['indent_left'] = indent.get(f'{{{self.NS["w"]}}}left')
+                style.paragraph['indent_right'] = indent.get(f'{{{self.NS["w"]}}}right')
+                style.paragraph['first_line_indent'] = indent.get(f'{{{self.NS["w"]}}}firstLine')
+        
+        # 解析表格属性
+        table_elem = style_elem.find('.//w:tblPr', namespaces=self.NS)
+        if table_elem is not None:
+            # 边框
+            borders = table_elem.find('.//w:tblBorders', namespaces=self.NS)
+            if borders is not None:
+                style.table['border_top'] = borders.find('.//w:top', namespaces=self.NS)
+                style.table['border_bottom'] = borders.find('.//w:bottom', namespaces=self.NS)
+                style.table['border_left'] = borders.find('.//w:left', namespaces=self.NS)
+                style.table['border_right'] = borders.find('.//w:right', namespaces=self.NS)
+        
+        # 解析列表属性
+        list_elem = style_elem.find('.//w:pPr//w:numPr', namespaces=self.NS)
+        if list_elem is not None:
+            style.style_type = 'list'
+            # 列表格式
+            num_id = list_elem.find('.//w:numId', namespaces=self.NS)
+            if num_id is not None:
+                style.list['format'] = num_id.get(f'{{{self.NS["w"]}}}val')
+            
+            # 列表级别
+            ilvl = list_elem.find('.//w:ilvl', namespaces=self.NS)
+            if ilvl is not None:
+                style.list['level'] = ilvl.get(f'{{{self.NS["w"]}}}val')
+    
+    def print_styles(self, styles, style_type=None):
+        """
+        打印样式信息
+        
+        Args:
+            styles (list): Style对象列表
+            style_type (str): 样式类型过滤
+        """
+        if style_type:
+            filtered_styles = [s for s in styles if s.style_type == style_type]
+            logger.info(f"打印{style_type}样式，共 {len(filtered_styles)} 个")
+        else:
+            filtered_styles = styles
+            logger.info(f"打印所有样式，共 {len(filtered_styles)} 个")
+        
+        for style in filtered_styles:
+            logger.info(f"\n样式ID: {style.style_id}")
+            logger.info(f"样式名称: {style.style_name}")
+            logger.info(f"样式类型: {style.style_type}")
+            logger.info(f"字体: {style.font}")
+            logger.info(f"段落属性: {style.paragraph}")
+            if style.style_type == 'table':
+                logger.info(f"表格属性: {style.table}")
+            elif style.style_type == 'list':
+                logger.info(f"列表属性: {style.list}")
     
     def process(self):
         """

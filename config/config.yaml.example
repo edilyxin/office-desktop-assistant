@@ -1,6 +1,6 @@
 # PaddleOCR-vl API配置
-api_key: your_api_key_here
-api_url: https://paddleocr-vl-api.example.com
+API_URL : "<your url> [PaddleOCR 官网](https://aistudio.baidu.com/paddleocr/task)"
+TOKEN : "<access token>"
 
 # 识别选项
 use_doc_orientation_classify: true  # 是否使用文档方向分类
