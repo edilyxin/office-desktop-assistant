@@ -723,11 +723,13 @@ class PaddleOCRVLAssistant(QMainWindow):
     def process_file(self):
         """处理文件，应用样式模板"""
         try:
+            # 导入所需模块
+            import subprocess
+            import platform
+            from src.style_processor import StyleProcessor
+            
             self.status_bar.showMessage("正在处理文件...")
             logger.info(f"开始处理文件: {self.target_path}")
-
-            # 导入样式处理器
-            from src.style_processor import WordStyleProcessor
 
             # 保存处理后的文件
             processed_name = f"processed_{os.path.basename(self.target_path)}"
@@ -735,7 +737,7 @@ class PaddleOCRVLAssistant(QMainWindow):
             os.makedirs("output", exist_ok=True)
 
             # 创建样式处理器实例
-            style_processor = WordStyleProcessor(
+            style_processor = StyleProcessor(
                 template_path=self.template_path,
                 target_path=self.target_path,
                 output_path=self.processed_path
@@ -743,20 +745,29 @@ class PaddleOCRVLAssistant(QMainWindow):
 
             # 执行样式处理流程
             if style_processor.process():
-                # 获取处理统计信息
-                stats = style_processor.get_processing_stats()
-                
                 # 更新界面显示
                 self.style_result_label.setText(
-                    f"文件处理完成!\n"\
-                    f"结果文件: {processed_name}\n"\
-                    f"共处理段落: {stats['total_paragraphs']}，修改: {stats['processed_paragraphs']}\n"\
-                    f"共处理表格: {stats['total_tables']}，修改: {stats['processed_tables']}\n"\
-                    f"成功应用: {stats['successful_applications']}，失败: {stats['failed_applications']}")
+                    f"文件处理完成!\n"
+                    f"结果文件: {processed_name}\n"
+                    f"处理成功！\n"
+                    f"保存路径: {self.processed_path}")
                 self.save_result_btn.setEnabled(True)
 
                 self.status_bar.showMessage("文件处理完成")
                 logger.info(f"文件处理完成: {self.processed_path}")
+                
+                # 打开处理后的文件
+                try:
+                    if platform.system() == 'Darwin':  # macOS
+                        subprocess.call(['open', self.processed_path])
+                    elif platform.system() == 'Windows':  # Windows
+                        os.startfile(self.processed_path)
+                    else:  # Linux
+                        subprocess.call(['xdg-open', self.processed_path])
+                    logger.info(f"已打开处理后的文件: {self.processed_path}")
+                except Exception as e:
+                    logger.warning(f"无法打开处理后的文件: {str(e)}")
+                    QMessageBox.information(self, "提示", f"文件处理完成，但无法自动打开文件。\n请手动打开: {self.processed_path}")
             else:
                 raise Exception("样式处理流程执行失败")
         except Exception as e:
