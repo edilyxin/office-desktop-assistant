@@ -175,6 +175,8 @@ class PaddleOCRVLAssistant(QMainWindow):
         """初始化UI界面"""
         self.setWindowTitle("办公桌面助手")
         self.setGeometry(100, 100, 1200, 600)
+        # 启用拖拽功能
+        self.setAcceptDrops(True)
 
         # 创建菜单
         self.create_menu()
@@ -295,6 +297,30 @@ class PaddleOCRVLAssistant(QMainWindow):
         scroll_area.setWidgetResizable(True)
 
         right_layout.addWidget(scroll_area)
+        
+        # 页面导航按钮区域
+        self.page_nav_layout = QHBoxLayout()
+        self.page_nav_layout.setAlignment(Qt.AlignCenter)
+        
+        # 上一页按钮
+        self.prev_page_btn = QPushButton("上一页")
+        self.prev_page_btn.clicked.connect(self.prev_page)
+        self.prev_page_btn.setEnabled(False)  # 默认禁用
+        self.page_nav_layout.addWidget(self.prev_page_btn)
+        
+        # 页码显示
+        self.page_label = QLabel("第 1/1 页")
+        self.page_label.setAlignment(Qt.AlignCenter)
+        self.page_label.setFixedWidth(100)
+        self.page_nav_layout.addWidget(self.page_label)
+        
+        # 下一页按钮
+        self.next_page_btn = QPushButton("下一页")
+        self.next_page_btn.clicked.connect(self.next_page)
+        self.next_page_btn.setEnabled(False)  # 默认禁用
+        self.page_nav_layout.addWidget(self.next_page_btn)
+        
+        right_layout.addLayout(self.page_nav_layout)
         splitter.addWidget(right_widget)
 
         # 设置分割比例
@@ -440,30 +466,45 @@ class PaddleOCRVLAssistant(QMainWindow):
 
         logger.debug(f"OCR识别选项: {options}")
 
+        # 导入PDFUtils
+        from .pdf_utils import PDFUtils
+        
         # 保存当前图片字节
+        self.current_image_bytes = None
+        self.current_images = []  # 用于存储多页PDF的图片
+        self.current_page = 0  # 当前显示的页码
+        
         if image_bytes:
             self.current_image_bytes = image_bytes
+            self.current_images = [image_bytes]
             logger.info("使用截图进行OCR识别")
         elif file_path:
-            # 从文件读取图片字节
-            self.current_image_bytes = FileUtils.read_file_bytes(file_path)
             logger.info(f"使用文件进行OCR识别: {file_path}")
+            
+            # 检查是否为PDF文件
+            if PDFUtils.is_pdf_file(file_path):
+                # 将PDF转换为图片列表
+                self.current_images = PDFUtils.pdf_to_images(file_path)
+                if self.current_images:
+                    self.current_image_bytes = self.current_images[0]
+                    logger.info(f"PDF转换为图片成功，共 {len(self.current_images)} 页")
+                else:
+                    logger.error("PDF转换为图片失败")
+                    return
+            else:
+                # 从文件读取图片字节
+                self.current_image_bytes = FileUtils.read_file_bytes(file_path)
+                self.current_images = [self.current_image_bytes]
 
         # 显示图片（等比例缩放）
         if self.current_image_bytes:
-            pixmap = QPixmap()
-            pixmap.loadFromData(self.current_image_bytes)
-
-            # 等比例缩放图片，保持原始比例
-            scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-
-            self.image_label.setPixmap(scaled_pixmap)
-            logger.debug(
-                f"图片显示完成，原始尺寸: {pixmap.size()}, 缩放后尺寸: {scaled_pixmap.size()}")
+            # 使用统一的页面显示方法
+            self.display_current_page()
+            logger.debug(f"图片显示完成，当前页码: {self.current_page + 1}/{len(self.current_images)}")
+            
+            # 更新导航按钮状态
+            self.prev_page_btn.setEnabled(len(self.current_images) > 1 and self.current_page > 0)
+            self.next_page_btn.setEnabled(len(self.current_images) > 1 and self.current_page < len(self.current_images) - 1)
 
         # 禁用按钮
         self.screenshot_btn.setEnabled(False)
@@ -550,8 +591,13 @@ class PaddleOCRVLAssistant(QMainWindow):
         return markdown_text
 
     def markdown_to_html(self, markdown_text):
-        """将Markdown文本转换为HTML"""
-        # 简单的HTML模板，不使用f-string，避免CSS中的{}导致语法错误
+        """将Markdown文本转换为HTML，支持数学公式"""
+        import markdown
+        
+        # 配置markdown扩展，包括数学公式支持
+        extensions = ['markdown.extensions.extra', 'markdown.extensions.codehilite', 'mdx_math']
+        
+        # 简单的HTML模板，包含MathJax支持
         html_template = '''<!DOCTYPE html>
 <html>
 <head>
@@ -624,13 +670,40 @@ class PaddleOCRVLAssistant(QMainWindow):
             color: #666;
             font-style: italic;
         }
+        /* 代码高亮样式 */
+        .codehilite {
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        /* 数学公式样式 */
+        .math {
+            font-family: 'Times New Roman', Times, serif;
+        }
     </style>
+    <!-- MathJax支持数学公式渲染 -->
+    <script type="text/javascript" async
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.9/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+    </script>
+    <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            }
+        });
+    </script>
 </head>
 <body>
 '''
 
-        # 简单的Markdown到HTML转换（仅处理基本格式）
-        html_content = html_template + markdown_text + '''
+        # 实际的Markdown转换
+        html_body = markdown.markdown(markdown_text, extensions=extensions)
+        
+        # 构建完整的HTML内容
+        html_content = html_template + html_body + '''
 </body>
 </html>'''
 
@@ -807,6 +880,76 @@ class PaddleOCRVLAssistant(QMainWindow):
                           "基于PaddleOCR-vl API开发的桌面OCR工具，"
                           "支持截图识别和文件上传识别，"
                           "识别结果可复制到剪贴板或保存为Markdown文件。")
+    
+    def prev_page(self):
+        """显示上一页"""
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.display_current_page()
+    
+    def next_page(self):
+        """显示下一页"""
+        if self.current_page < len(self.current_images) - 1:
+            self.current_page += 1
+            self.display_current_page()
+    
+    def display_current_page(self):
+        """显示当前页面"""
+        if not self.current_images:
+            return
+        
+        # 加载当前页的图片
+        self.current_image_bytes = self.current_images[self.current_page]
+        pixmap = QPixmap()
+        pixmap.loadFromData(self.current_image_bytes)
+        
+        # 等比例缩放图片，保持原始比例
+        scaled_pixmap = pixmap.scaled(
+            self.image_label.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        
+        self.image_label.setPixmap(scaled_pixmap)
+        
+        # 更新页码显示
+        self.page_label.setText(f"第 {self.current_page + 1}/{len(self.current_images)} 页")
+        
+        # 更新状态栏显示
+        if len(self.current_images) > 1:
+            self.status_bar.showMessage(f"显示PDF页面 {self.current_page + 1}/{len(self.current_images)}")
+        
+        # 更新导航按钮状态
+        self.prev_page_btn.setEnabled(self.current_page > 0)
+        self.next_page_btn.setEnabled(self.current_page < len(self.current_images) - 1)
+    
+    def dragEnterEvent(self, event):
+        """处理拖入事件"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+    
+    def dragMoveEvent(self, event):
+        """处理拖动移动事件"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+    
+    def dropEvent(self, event):
+        """处理拖放事件"""
+        if event.mimeData().hasUrls():
+            # 获取拖放的文件路径
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                if file_path:
+                    logger.info(f"拖放文件: {file_path}")
+                    # 检查文件格式
+                    if not FileUtils.is_supported_file(file_path):
+                        logger.warning(f"不支持的文件格式: {file_path}")
+                        QMessageBox.warning(self, "警告", f"不支持的文件格式: {os.path.basename(file_path)}")
+                        continue
+                    
+                    # 开始OCR识别
+                    self.start_ocr_recognition(file_path=file_path)
+                    break  # 只处理第一个文件
 
 
 def main():
